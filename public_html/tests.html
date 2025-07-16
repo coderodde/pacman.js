@@ -70,6 +70,20 @@
                 }
                 
                 console.log("Large random data test passed!");
+                
+                for (let i = 0; i < 5000; i++) {
+                    h.add(i, i);
+                }
+                
+                h.decreasePriority(4500, 50);
+                
+                for (let i = 0; i < 50; ++i) {
+                    assert(i, h.extractMinimum());
+                }
+                
+                assert(4500, h.extractMinimum());
+                
+                console.log("Deep decrease priority test passed!");
             })();
         </script>
     </body>
