@@ -49,6 +49,10 @@ pacman.tileToCoorinatesString = function(tile) {
     return "[" + tile.x + ", " + tile.y + "]";
 };
 
+pacman.computeRandomNextTile = function(ghost) {
+    
+};
+
 pacman.computeReachableTiles = function(sourceTile, ghost) {
     const visitedMap = {};
     const q          = new DynamicCircularQueue();
@@ -63,7 +67,6 @@ pacman.computeReachableTiles = function(sourceTile, ghost) {
         const currentStr = pacman.tileToCoorinatesString(current);
         const neighbors = current.getNonObstacleNeighbors();
         
-        // TODO: pacman.prune here?
         pacman.prune(neighbors,
                      pacman.model.ghosts,
                      ghost);
@@ -934,7 +937,6 @@ pacman.engine = {
                         ghost.path = undefined;
                         var bonus = 200 * Math.pow(2, pacman.model.ghostsEaten++);
                         pacman.model.points += bonus;
-                        console.log(bonus);
                     } else {
                         // Bye bye!
                         return pacman.engine.magic.FAIL;
@@ -965,13 +967,41 @@ pacman.engine = {
                     for (var i = 0; i < pacman.model.ghosts.length; i++) {
                         // vulnerability ends after 900 ticks at almost 60 Hz -> 15+ seconds.
                         pacman.model.ghosts[i].vetime = pacman.model.tickCount + 900;
-                        pacman.model.ghosts[i].path = undefined;
+                        pacman.model.ghosts[i].path = undefined; 
                     }
                 }
             }
         }
 
         return pacman.engine.magic.CONTINUE;
+    },
+    
+    computeVulnerableGhostRandomPath: function(ghost) {
+        var ghostTilePos = ghost.getTilePosition();
+        var sourceTile   = pacman.model.grid.getTile(ghostTilePos[0],
+                                                     ghostTilePos[1]);
+        var u = undefined;
+        const path = [];
+        const reachableMap = pacman.computeReachableTiles(sourceTile, 
+                                                          ghost);
+        const tiles = Object.values(reachableMap);
+        
+        if (tiles.length === 0 || (tiles.length === 1 && tiles[0] === null)) {
+            return [];
+        }
+        
+        do {
+            const index = parseInt(Math.random() * tiles.length);
+            u = tiles[index];
+        } while (u === sourceTile || u === undefined || u === null);
+
+        while (u) {
+            path.push(u);
+            const key = pacman.tileToCoorinatesString(u);
+            u = reachableMap[key];
+        }
+        
+        return path.reverse();
     },
 
     moveGhost: function (g) {
@@ -988,39 +1018,46 @@ pacman.engine = {
             }
 
             if (!g.path || g.path.length < 2) {
-                var ghostPos = g.getTilePosition();
-                var sourceTile = pacman.model.grid.getTile(ghostPos[0],
-                                                           ghostPos[1]);
-                var u = undefined;
-                var path = undefined;
-
-                const reachableMap = pacman.computeReachableTiles(sourceTile, g);
-                const tiles = Object.values(reachableMap);
-
-                if (tiles.length === 0) {
-                    console.log("moveGhost: tiles.length === 0");
+                g.path = pacman.engine.computeVulnerableGhostRandomPath(g);
+                
+                if (g.path.length < 2) {
+                    console.log("g.path.length: ", g.path.length, " < 2");
                     return;
                 }
                 
-                do {
-                    u = tiles[parseInt(Math.random() * tiles.length)];
-                } while (u === sourceTile || u === undefined || u === null);
-
-                path = [];
-
-                while (u) {
-                    console.log(u);
-                    path.push(u);
-                    const key = pacman.tileToCoorinatesString(u);
-                    u = reachableMap[key];
-                }
-
-                g.path = path;
+                
+//                var ghostPos = g.getTilePosition();
+//                var sourceTile = pacman.model.grid.getTile(ghostPos[0],
+//                                                           ghostPos[1]);
+//                var u = undefined;
+//                var path = undefined;
+//
+//                const reachableMap = pacman.computeReachableTiles(sourceTile, g);
+//                const tiles = Object.values(reachableMap);
+//
+//                if (tiles.length === 0) {
+//                    return;
+//                }
+//                
+//                do {
+//                    u = tiles[parseInt(Math.random() * tiles.length)];
+//                } while (u === sourceTile || u === undefined || u === null);
+//
+//                path = [];
+//
+//                while (u) {
+//                    path.push(u);
+//                    const key = pacman.tileToCoorinatesString(u);
+//                    u = reachableMap[key];
+//                }
+//
+//                g.path = path;
             }
 
             var nextTile = g.path[1];
             var ghostPos = g.getTilePosition();
-            var ghostDir = [nextTile.x - ghostPos[0], nextTile.y - ghostPos[1]];
+            var ghostDir = [Math.sign(nextTile.x - ghostPos[0]),
+                            Math.sign(nextTile.y - ghostPos[1])];
 
             if (ghostDir[0] === -1) {
                 if (g.y % 8 < 3) {
