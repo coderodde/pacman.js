@@ -1,131 +1,14 @@
 var pacman = {};
 
-pacman.ds = {
-    Heap: function(eq) {
-        this.size = 0;
-        this.array = [];
-        this.eq = eq;
-    }
-}
-
-pacman.ds.Heap.prototype.siftUp = function(i) {
-    if (i <= 0) {
-        return;
-    }
-
-    var p = (i - 1) >>> 1;
-    var element = this.array[i];
-
-    while (i > 0 && this.array[p].priority > element.priority) {
-        this.array[i] = this.array[p];
-        i = p;
-        p = (i - 1) >>> 1;
-    }
-
-    this.array[i] = element;
-}
-
-pacman.ds.Heap.prototype.siftDown = function(i) {
-    var minIndex = i;
-    var node = this.array[i];
-
-    for (;;) {
-        var l = (i << 1) + 1;
-        var r = l + 1;
-
-        if (l < this.size && this.array[l].priority < node.priority) {
-            minIndex = l;
-        }
-
-        if (r < this.size && this.array[r].priority < Math.min(this.array[l].priority, node.priority)) {
-            minIndex = r;
-        }
-
-        if (minIndex === i) {
-            this.array[i] = node;
-            return;
-        } else {
-            this.array[i] = this.array[minIndex];
-            i = minIndex;
-        }
-    }
-}
-
-pacman.ds.Heap.prototype.add = function(element, priority) {
-    this.array.push({element: element, priority: priority});
-    this.siftUp(this.size++);
-}
-
-pacman.ds.Heap.prototype.extractMinimum = function() {
-    if (this.size <= 0) {
-        return undefined;
-    }
-
-    var node = this.array[0];
-    this.array[0] = this.array[--this.size];
-    this.array.pop();
-
-    if (this.size > 0) {
-        this.siftDown(0);
-    }
-
-    return node.element;
-}
-
-pacman.ds.Heap.prototype.changePriority = function(element, priority) {
-    var index = -1;
-
-    for (var i = 0, e = this.size; i < e; i++) {
-        if (this.eq(this.array[i].element, element)) {
-            index = i;
-            break;
-        }
-    }
-
-    if (index === -1) {
-        return false;
-    }
-
-    var node = this.array[index];
-
-    if (priority < node.priority) {
-        node.priority = priority;
-        this.siftUp(index);
-    } else if (priority > node.priority) {
-        node.priority = priority;
-        this.siftDown(index);
-    }
-
-    return true;
-}
-
-pacman.ds.Heap.prototype.contains = function(element) {
-    for (var i = 0, e = this.size; i < e; i++) {
-        if (this.eq(this.array[i].element, element)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 pacman.heuristicFunction = function(tile, goal) {
     var dx = Math.abs(tile.x - goal.x);
     // take teleport into account.
     return Math.abs(tile.y - goal.y) + Math.min(dx, pacman.settings.w - dx);
-}
-
-pacman.uncloseAll = function(grid) {
-    for (var i = 0, e = pacman.settings.w; i < e; i++) {
-        for (var j = 0, ee = pacman.settings.h; j < ee; j++) {
-            grid.getTile(i, j).closed = false;
-        }
-    }
-}
+};
 
 pacman.tileEq = function(tile1, tile2) {
     return tile1.x === tile2.x && tile1.y === tile2.y;
-}
+};
 
 pacman.prune = function(tileList, ghostList, ghostSelf) {
     var index = -1;
@@ -154,15 +37,16 @@ pacman.prune = function(tileList, ghostList, ghostSelf) {
             }
         }
     }
-}
+};
 
 pacman.AStar = function(start, goal, ghost) {
-    pacman.uncloseAll(start.grid);
-    var OPEN = new pacman.ds.Heap(pacman.tileEq);
-
-    start.g = 0;
-    start.h = pacman.heuristicFunction(start, goal);
-    start.parent = undefined;
+    const OPEN = new pacman.ds.Heap(pacman.tileEq);
+    const CLOSED = {};
+    const DISTANCE_MAP = {};
+    const PARENT_MAP = {};
+    
+    DISTANCE_MAP[start.id] = 0;
+    PARENT_MAP  [start.id] = null;
 
     var l = [start];
     pacman.prune(l, pacman.model.ghosts, ghost);
@@ -171,79 +55,80 @@ pacman.AStar = function(start, goal, ghost) {
         return l;
     }
 
-    OPEN.add(start, start.h);
+    OPEN.add(start, pacman.heuristicFunction(start, goal));
 
     while (OPEN.size > 0) {
         var u = OPEN.extractMinimum();
-        u.closed = true;
+        CLOSED[u.id] = true;
 
         if (pacman.tileEq(u, goal)) {
-            var path = [];
+            const path = [];
 
             while (u) {
-                path.unshift(u);
-                u = u.parent;
+                path.push(u);
+                u = PARENT_MAP[u.id];
             }
 
-            return path;
+            return path.reverse();
         }
 
         var children = u.getNonObstacleNeighbors();
         // honour other ghosts.
-        pacman.prune(children, pacman.model.ghosts, ghost);
+        pacman.prune(children,
+                     pacman.model.ghosts,
+                     ghost);
 
-        for (var i = 0, e = children.length; i < e; i++) {
-            var child = children[i];
-
-            if (child.closed) {
+        for (const child of children) {
+            if (CLOSED[child.id]) {
                 continue;
             }
+            
+            const cost = DISTANCE_MAP[u.id] + 1;
 
-            var tg = u.g + 1;
-
-            if (OPEN.contains(child) === false) {
-                child.g = tg;
-                child.h = pacman.heuristicFunction(child, goal);
-                child.parent = u;
-                OPEN.add(child, child.g + child.h);
-            } else if (tg < child.g) {
-                child.g = tg;
-                child.parent = u;
-                OPEN.changePriority(child, child.g + child.h);
+            if (!DISTANCE_MAP[child.id]) {
+                const h = pacman.heuristicFunction(child, 
+                                                   goal);
+                DISTANCE_MAP[child.id] = cost;
+                PARENT_MAP  [child.id] = u;
+                
+                OPEN.add(child, cost + h);
+                
+            } else if (DISTANCE_MAP[child.id] > cost) {
+                DISTANCE_MAP[child.id] = cost;
+                PARENT_MAP  [child.id] = u;
+                
+                const h = pacman.heuristicFunction(child,
+                                                   goal);
+                OPEN.changePriority(child, 
+                                    cost + h);
             }
         }
     }
 
     return [];
-}
+};
 
 pacman.BFS = function(start) {
-    pacman.uncloseAll(start.grid);
-    var Q = [];
-    var visited = [];
-    start.closed = true;
-    start.parent = undefined;
-    Q.push(start);
-    visited.push(start);
+    var Q = new DynamicCircularQueue();
+    const visited = {};
+    
+    visited[start.id] = start;
+    Q.enqueue(start);
 
-    while (Q.length > 0) {
-        var current = Q.shift();
+    while (Q.getSize() > 0) {
+        var current = Q.dequeue();
         var children = current.getNonObstacleNeighbors();
 
-        for (var i = 0, e = children.length; i < e; i++) {
-            var child = children[i];
-
-            if (child.closed === false) {
-                child.closed = true;
-                child.parent = current;
-                Q.push(child);
-                visited.push(child);
+        for (const child of children) {
+            if (!visited[child.id]) {
+                 visited[child.id] = current;
+                Q.enqueue(child);
             }
         }
     }
 
-    return visited;
-}
+    return Object.values(visited);
+};
 
 pacman.settings = {
     vpw: 2, // Virtual pixel width: how many actual pixels per virtual pixel in horz. direction.
@@ -547,7 +432,7 @@ pacman.g = (function() {
         pacmanAnimation: pacmanAnimation,
         drawReadyMessage: drawReadyMessage,
         drawGhost: drawGhost
-    }
+    };
 })();
 
 var DIR_NONE = 0;
@@ -564,10 +449,7 @@ pacman.model = {
         this.isObstacle = isObstacle;
         this.hasBerry = false;
         this.hasEnergizer = false;
-        this.g = 0;
-        this.h = 0;
-        this.parent = undefined;
-        this.closed = false;
+        this.id = "[" + x + ", " + y + "]";
     },
 
     Grid: function() {
@@ -624,36 +506,6 @@ pacman.model = {
 
     renderPoints: function(p) {
         document.getElementById("point-counter").innerHTML = "SCORE: " + p;
-    },
-
-    addEntry: function() {
-        pacman.model.top10list.push({username: pacman.model.username,
-                        score: pacman.model.points,
-                        ticks: pacman.model.tickCount});
-
-        pacman.model.top10list.sort(function(a,b) {
-            if (!a.username) {
-                if (!b.username) {
-                    return 0;
-                } else {
-                    return 1;
-                }
-            } else if (!b.username) {
-                return -1;
-            } else if (a.score > b.score) {
-                return -1;
-            } else if (a.score < b.score) {
-                return 1;
-            } else if (a.ticks < b.ticks) {
-                return -1;
-            } else if (a.ticks > b.ticks) {
-                return 1;
-            } else {
-                return 0;
-            }
-        });
-
-        pacman.model.top10list.pop();
     },
 
     username: "Unnamed player",
@@ -744,7 +596,7 @@ pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function() {
     }
 
     return n;
-}
+};
 
 pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
     var neighbors = [];
@@ -777,7 +629,7 @@ pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
     }
 
     return neighbors;
-}
+};
 
 function sort(s, c) {
     for (var i = 1; i < s.length; i++) {
@@ -817,32 +669,7 @@ pacman.engine = {
         pacman.engine.runs = true;
         pacman.engine.render();
         pacman.engine.runs = false;
-        pacman.engine.hideResultView();
         pacman.engine.showIntro0();
-    },
-
-    hideResultView: function() {
-        document.getElementById("result-view").className = "hidden";
-        document.getElementById("point-counter").innerHTML = "";
-    },
-
-    showResultView: function(msg) {
-        document.getElementById("result-msg").innerHTML = msg;
-        var tableElement = document.getElementById("score-table");
-        var html = "<tr> <td><h3>Name</h3></td> <td><h3>Score</h3></td> <td><h3>Time ticks</h3></td> </tr>";
-
-        for (var i = 0; i < pacman.model.top10list.length; i++) {
-            var entry = pacman.model.top10list[i];
-
-            if (!entry.username) {
-                html += "<tr> <td>N/A</td> <td>0</td> <td>0</td> </tr>";
-            } else {
-                html += "<tr> <td>" + entry.username + "</td> <td>" + entry.score + "</td> <td>" + entry.ticks + "</td> </tr>";
-            }
-        }
-
-        tableElement.innerHTML = html;
-        document.getElementById("result-view").className = "";
     },
 
     showIntro0: function() {
@@ -1122,22 +949,26 @@ pacman.engine = {
                 var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
                 var reachable = undefined;
                 var u = undefined;
-                var path = undefined;
+                const path = [];
 
                 reachable = pacman.BFS(sourceTile);
+                
+                if (reachable.length === 0 ||
+                   (reachable.length === 1 && !reachable[0])) {
+                    return;
+                }
 
                 do {
                     u = reachable[parseInt(Math.random() * reachable.length)];
-                } while (u === sourceTile);
-
-                path = [];
+                } while (u === sourceTile || !u);
 
                 while (u) {
-                    path.unshift(u);
-                    u = u.parent;
+                    path.push(u);
+                    const uid = u.id;
+                    u = reachable[uid];
                 }
 
-                g.path = path;
+                g.path = path.reverse();
             }
 
             var nextTile = g.path[1];
@@ -1251,11 +1082,12 @@ pacman.engine = {
         var pacmanPos = pm.getTilePosition();
         var ghostPos = g.getTilePosition();
 
-        if (!g.path || pacmanPos[0] !== pm.previousPos[0]
-                    || pacmanPos[1] !== pm.previousPos[1]) {
+        if (!g.path) {
             var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
             var targetTile = pacman.model.grid.getTile(pacmanPos[0], pacmanPos[1]);
-            var path = pacman.AStar(sourceTile, targetTile, g);
+            var path = pacman.AStar(sourceTile,
+                                    targetTile, 
+                                    g);
             g.path = path;
         }
 
@@ -1700,10 +1532,8 @@ pacman.engine = {
         if (status === pacman.engine.magic.CONTINUE) {
             setTimeout(pacman.engine.tick, 1000 / 60);
         } else if (status === pacman.engine.magic.FAIL) {
-            pacman.model.addEntry();
             pacman.engine.showResultView("Defeat! Your score is " + pacman.model.points + " points.");
         } else if (status === pacman.engine.magic.VICTORY) {
-            pacman.model.addEntry();
             pacman.engine.showResultView("Victory! Your score is " + pacman.model.points + " points.");
         }
 

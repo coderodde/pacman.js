@@ -35,22 +35,10 @@
                 <canvas id="pmcanvas" width="448" height="496"></canvas><br />
                 <div id="point-counter" class="text"></div>
             </div>
-
-            <div class="item">
-                <div id="result-view" class="hidden">
-                    <span id="result-msg" class="largeText"></span>
-                    <br />
-                    <table id="score-table" class="text" style="border: solid 1px white; margin: 0 auto;"></table>
-                    <p class="smallText" style="text-align: center;">The score table keeps track of local matches only.</p>
-                    <br />
-                    <a href="#" style="text-decoration: none; color: white;" onclick="pacman.engine.newGame(pacman.model.username); pacman.engine.hideResultView();">Replay</a>
-                    <br />
-                    <a href="#" style="text-decoration: none; color: white;" onclick="pacman.engine.hideResultView(); initWelcomeView(); detachKeyListener();">Index page</a>
-                </div>
-            </div>
         </div>
         
         <script src="queue.js"></script>
+        <!--<script src="heap.js"></script>-->
         <script src="pacman.js"></script>
     </body>
 </html>

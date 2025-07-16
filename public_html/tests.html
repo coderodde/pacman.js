@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+    <head></head>
+    <body>
+        <script src="heap.js"></script>
+        <script>
+
+            function assert(a, b) {
+                if (a !== b) {
+                    throw "Assertion failed: " + a + " !== " + b;
+                }
+            }
+
+            (function () {
+                const h = new ds.Heap((i) => {
+                    return i;
+                });
+                
+                for (var i = 1; i <= 100; ++i) {
+                    h.add(i, 2 * i);
+                }
+                
+                for (var i = 1; i <= 100; ++i) {
+                    assert(i, h.extractMinimum());
+                }
+
+                h.add(3, 3);
+                h.add(1, 1);
+                h.add(4, 4);
+                h.add(5, 5);
+                h.add(2, 2);
+                
+                h.changePriority(5, -10);
+                h.changePriority(1, 100);
+
+                assert(5, h.extractMinimum());
+                h.extractMinimum();
+                h.extractMinimum();
+                h.extractMinimum();
+                assert(1, h.extractMinimum());
+            })();
+        </script>
+    </body>
+</html>
