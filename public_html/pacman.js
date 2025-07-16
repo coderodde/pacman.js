@@ -1,10 +1,133 @@
 var pacman = {};
 
-pacman.tileEq = function (tile1, tile2) {
+pacman.ds = {
+    Heap: function(eq) {
+        this.size = 0;
+        this.array = [];
+        this.eq = eq;
+    }
+}
+
+pacman.ds.Heap.prototype.siftUp = function(i) {
+    if (i <= 0) {
+        return;
+    }
+
+    var p = (i - 1) >>> 1;
+    var element = this.array[i];
+
+    while (i > 0 && this.array[p].priority > element.priority) {
+        this.array[i] = this.array[p];
+        i = p;
+        p = (i - 1) >>> 1;
+    }
+
+    this.array[i] = element;
+}
+
+pacman.ds.Heap.prototype.siftDown = function(i) {
+    var minIndex = i;
+    var node = this.array[i];
+
+    for (;;) {
+        var l = (i << 1) + 1;
+        var r = l + 1;
+
+        if (l < this.size && this.array[l].priority < node.priority) {
+            minIndex = l;
+        }
+
+        if (r < this.size && this.array[r].priority < Math.min(this.array[l].priority, node.priority)) {
+            minIndex = r;
+        }
+
+        if (minIndex === i) {
+            this.array[i] = node;
+            return;
+        } else {
+            this.array[i] = this.array[minIndex];
+            i = minIndex;
+        }
+    }
+}
+
+pacman.ds.Heap.prototype.add = function(element, priority) {
+    this.array.push({element: element, priority: priority});
+    this.siftUp(this.size++);
+}
+
+pacman.ds.Heap.prototype.extractMinimum = function() {
+    if (this.size <= 0) {
+        return undefined;
+    }
+
+    var node = this.array[0];
+    this.array[0] = this.array[--this.size];
+    this.array.pop();
+
+    if (this.size > 0) {
+        this.siftDown(0);
+    }
+
+    return node.element;
+}
+
+pacman.ds.Heap.prototype.changePriority = function(element, priority) {
+    var index = -1;
+
+    for (var i = 0, e = this.size; i < e; i++) {
+        if (this.eq(this.array[i].element, element)) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index === -1) {
+        return false;
+    }
+
+    var node = this.array[index];
+
+    if (priority < node.priority) {
+        node.priority = priority;
+        this.siftUp(index);
+    } else if (priority > node.priority) {
+        node.priority = priority;
+        this.siftDown(index);
+    }
+
+    return true;
+}
+
+pacman.ds.Heap.prototype.contains = function(element) {
+    for (var i = 0, e = this.size; i < e; i++) {
+        if (this.eq(this.array[i].element, element)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+pacman.heuristicFunction = function(tile, goal) {
+    var dx = Math.abs(tile.x - goal.x);
+    // take teleport into account.
+    return Math.abs(tile.y - goal.y) + Math.min(dx, pacman.settings.w - dx);
+}
+
+pacman.uncloseAll = function(grid) {
+    for (var i = 0, e = pacman.settings.w; i < e; i++) {
+        for (var j = 0, ee = pacman.settings.h; j < ee; j++) {
+            grid.getTile(i, j).closed = false;
+        }
+    }
+}
+
+pacman.tileEq = function(tile1, tile2) {
     return tile1.x === tile2.x && tile1.y === tile2.y;
 }
 
-pacman.prune = function (tileList, ghostList, ghostSelf) {
+pacman.prune = function(tileList, ghostList, ghostSelf) {
     var index = -1;
 
     for (var k = 0; k < ghostList.length; k++) {
@@ -31,138 +154,137 @@ pacman.prune = function (tileList, ghostList, ghostSelf) {
             }
         }
     }
-};
+}
 
-pacman.tracebackPath = function(goal, visitedMap) {
-    const path = [];
-    
-    while (goal !== null) {
-        path.push(goal);
-        const goalStr = pacman.tileToCoorinatesString(goal);
-        goal = visitedMap[goalStr];
+pacman.AStar = function(start, goal, ghost) {
+    pacman.uncloseAll(start.grid);
+    var OPEN = new pacman.ds.Heap(pacman.tileEq);
+
+    start.g = 0;
+    start.h = pacman.heuristicFunction(start, goal);
+    start.parent = undefined;
+
+    var l = [start];
+    pacman.prune(l, pacman.model.ghosts, ghost);
+
+    if (l.length === 0) {
+        return l;
     }
-     
-    return path.reverse();
-};
 
-pacman.tileToCoorinatesString = function(tile) {
-    return "[" + tile.x + ", " + tile.y + "]";
-};
+    OPEN.add(start, start.h);
 
-pacman.computeRandomNextTile = function(ghost) {
-    
-};
+    while (OPEN.size > 0) {
+        var u = OPEN.extractMinimum();
+        u.closed = true;
 
-pacman.computeReachableTiles = function(sourceTile, ghost) {
-    const visitedMap = {};
-    const q          = new DynamicCircularQueue();
-    
-    const sourceTileStr = pacman.tileToCoorinatesString(sourceTile);
-    
-    q.enqueue(sourceTile);
-    visitedMap[sourceTileStr] = null;
-    
-    while (q.getSize() > 0) {
-        const current = q.dequeue();
-        const currentStr = pacman.tileToCoorinatesString(current);
-        const neighbors = current.getNonObstacleNeighbors();
-        
-        pacman.prune(neighbors,
-                     pacman.model.ghosts,
-                     ghost);
-                     
-        for (const neighbor of neighbors) {
-            const neighborStr = pacman.tileToCoorinatesString(neighbor);
-            
-            if (!(neighborStr in visitedMap)) {
-                visitedMap[neighborStr] = current;
-                q.enqueue(neighbor);
+        if (pacman.tileEq(u, goal)) {
+            var path = [];
+
+            while (u) {
+                path.unshift(u);
+                u = u.parent;
+            }
+
+            return path;
+        }
+
+        var children = u.getNonObstacleNeighbors();
+        // honour other ghosts.
+        pacman.prune(children, pacman.model.ghosts, ghost);
+
+        for (var i = 0, e = children.length; i < e; i++) {
+            var child = children[i];
+
+            if (child.closed) {
+                continue;
+            }
+
+            var tg = u.g + 1;
+
+            if (OPEN.contains(child) === false) {
+                child.g = tg;
+                child.h = pacman.heuristicFunction(child, goal);
+                child.parent = u;
+                OPEN.add(child, child.g + child.h);
+            } else if (tg < child.g) {
+                child.g = tg;
+                child.parent = u;
+                OPEN.changePriority(child, child.g + child.h);
             }
         }
     }
-    
-    return visitedMap;
-};
 
-pacman.breadthFirstSearch = function (start, goal, ghost) {
-
-    const visitedMap = {};
-    const q          = new DynamicCircularQueue();
-    
-    const startStr = pacman.tileToCoorinatesString(start);
-    const goalStr  = pacman.tileToCoorinatesString(goal);
-
-    q.enqueue(start);
-    visitedMap[startStr] = null;
-    
-    while (q.getSize()   > 0) {
-        const current = q.dequeue();
-        const currentStr = pacman.tileToCoorinatesString(current);
-        
-        if (currentStr === goalStr) {
-            return pacman.tracebackPath(goal,
-                                        visitedMap);
-        }
-
-        const neighbors = current.getNonObstacleNeighbors();
-        
-        pacman.prune(neighbors, 
-                     pacman.model.ghosts, 
-                     ghost);
-
-        for (const neighbor of neighbors) {
-            const neighborStr = pacman.tileToCoorinatesString(neighbor);
-            
-            if (!(neighborStr in visitedMap)) {
-                 visitedMap[neighborStr] = current;
-                 q.enqueue(neighbor);
-            }
-        }
-    }
-    
     return [];
+}
+
+pacman.BFS = function(start) {
+    pacman.uncloseAll(start.grid);
+    var Q = [];
+    var visited = [];
+    start.closed = true;
+    start.parent = undefined;
+    Q.push(start);
+    visited.push(start);
+
+    while (Q.length > 0) {
+        var current = Q.shift();
+        var children = current.getNonObstacleNeighbors();
+
+        for (var i = 0, e = children.length; i < e; i++) {
+            var child = children[i];
+
+            if (child.closed === false) {
+                child.closed = true;
+                child.parent = current;
+                Q.push(child);
+                visited.push(child);
+            }
+        }
+    }
+
+    return visited;
 }
 
 pacman.settings = {
     vpw: 2, // Virtual pixel width: how many actual pixels per virtual pixel in horz. direction.
     vph: 2, // Virtaul pixel height. These two may be modified with plausible results.
-    w: 28, // Maze...
-    h: 31, // ...dimensions. It makes no sense to modify these two as they are defined and used
-    // for making the code more clear.
+    w: 28,  // Maze...
+    h: 31,  // ...dimensions. It makes no sense to modify these two as they are defined and used
+            // for making the code more clear.
 
-    buildMaze: function () {
+    buildMaze: function() {
         var mazeString =
-                "############################" +
-                "#............##............#" +
-                "#.####.#####.##.#####.####.#" +
-                "#o####.#####.##.#####.####o#" +
-                "#.####.#####.##.#####.####.#" +
-                "#..........................#" +
-                "#.####.##.########.##.####.#" +
-                "#.####.##.########.##.####.#" +
-                "#......##....##....##......#" +
-                "######.##### ## #####.######" +
-                "######.##### ## #####.######" +
-                "######.##          ##.######" +
-                "######.## ###  ### ##.######" +
-                "######.## #      # ##.######" +
-                "      .   #      #   .      " +
-                "######.## #      # ##.######" +
-                "######.## ######## ##.######" +
-                "######.##          ##.######" +
-                "######.## ######## ##.######" +
-                "######.## ######## ##.######" +
-                "#............##............#" +
-                "#.####.#####.##.#####.####.#" +
-                "#.####.#####.##.#####.####.#" +
-                "#o..##.......  .......##..o#" +
-                "###.##.##.########.##.##.###" +
-                "###.##.##.########.##.##.###" +
-                "#......##....##....##......#" +
-                "#.##########.##.##########.#" +
-                "#.##########.##.##########.#" +
-                "#..........................#" +
-                "############################";
+        "############################" +
+        "#............##............#" +
+        "#.####.#####.##.#####.####.#" +
+        "#o####.#####.##.#####.####o#" +
+        "#.####.#####.##.#####.####.#" +
+        "#..........................#" +
+        "#.####.##.########.##.####.#" +
+        "#.####.##.########.##.####.#" +
+        "#......##....##....##......#" +
+        "######.##### ## #####.######" +
+        "######.##### ## #####.######" +
+        "######.##          ##.######" +
+        "######.## ###  ### ##.######" +
+        "######.## #      # ##.######" +
+        "      .   #      #   .      " +
+        "######.## #      # ##.######" +
+        "######.## ######## ##.######" +
+        "######.##          ##.######" +
+        "######.## ######## ##.######" +
+        "######.## ######## ##.######" +
+        "#............##............#" +
+        "#.####.#####.##.#####.####.#" +
+        "#.####.#####.##.#####.####.#" +
+        "#o..##.......  .......##..o#" +
+        "###.##.##.########.##.##.###" +
+        "###.##.##.########.##.##.###" +
+        "#......##....##....##......#" +
+        "#.##########.##.##########.#" +
+        "#.##########.##.##########.#" +
+        "#..........................#" +
+        "############################";
 
         pacman.model.grid = new pacman.model.Grid();
         pacman.model.berriesLeft = 0; // berry amount.
@@ -210,7 +332,7 @@ pacman.input = {
     left: false
 }
 
-pacman.g = (function () {
+pacman.g = (function() {
     var c;
 
     function setContext(context) {
@@ -224,37 +346,37 @@ pacman.g = (function () {
     // Draws horizontal line.
     function drawHorzLine(x, y, len) {
         c.fillRect(x * pacman.settings.vpw,
-                y * pacman.settings.vph,
-                len * pacman.settings.vpw,
-                pacman.settings.vph);
+                   y * pacman.settings.vph,
+                   len * pacman.settings.vpw,
+                   pacman.settings.vph);
     }
 
     // Draws vertical line.
     function drawVertLine(x, y, len) {
         c.fillRect(x * pacman.settings.vpw,
-                y * pacman.settings.vph,
-                pacman.settings.vpw,
-                len * pacman.settings.vph);
+                   y * pacman.settings.vph,
+                   pacman.settings.vpw,
+                   len * pacman.settings.vph);
     }
 
     function drawVPixel(x, y) {
         c.fillRect(x * pacman.settings.vpw,
-                y * pacman.settings.vph,
-                pacman.settings.vpw,
-                pacman.settings.vph);
+                   y * pacman.settings.vph,
+                   pacman.settings.vpw,
+                   pacman.settings.vph);
     }
 
     // draw rectangle by virtual coordinates.
     function fillRect(x, y, w, h) {
         c.fillRect(x * pacman.settings.vpw,
-                y * pacman.settings.vph,
-                w * pacman.settings.vpw,
-                h * pacman.settings.vph);
+                   y * pacman.settings.vph,
+                   w * pacman.settings.vpw,
+                   h * pacman.settings.vph);
     }
 
     function clear() {
         c.clearRect(0, 0, 8 * pacman.settings.vpw * pacman.settings.w,
-                8 * pacman.settings.vph * pacman.settings.h);
+                          8 * pacman.settings.vph * pacman.settings.h);
     }
 
     function drawPauseMessage() {
@@ -275,8 +397,8 @@ pacman.g = (function () {
 
         var alpha = 0.65 * Math.PI * (i / 11);
         c.fillStyle = "yellow";
-
-        switch (pacmanActor.dir) {
+        
+        switch(pacmanActor.dir) {
             case DIR_UP:
                 c.beginPath();
                 c.moveTo(cx, cy);
@@ -435,16 +557,20 @@ var DIR_DOWN = 3;
 var DIR_LEFT = 4;
 
 pacman.model = {
-    Tile: function (grid, x, y, isObstacle) {
+    Tile: function(grid, x, y, isObstacle) {
         this.grid = grid;
         this.x = x;
         this.y = y;
         this.isObstacle = isObstacle;
         this.hasBerry = false;
         this.hasEnergizer = false;
+        this.g = 0;
+        this.h = 0;
+        this.parent = undefined;
+        this.closed = false;
     },
 
-    Grid: function () {
+    Grid: function() {
         this.w = pacman.settings.w;
         this.h = pacman.settings.h;
         this.g = [];
@@ -459,7 +585,7 @@ pacman.model = {
     },
 
     // x and y are the coordinates of the upper left pixel of a 2x2-pixel center.
-    Actor: function (x, y, dir, pdtime, vetime, animate, color) {
+    Actor: function(x, y, dir, pdtime, vetime, animate, color) {
         this.x = x;
         this.y = y;
         this.dir = dir;
@@ -471,40 +597,41 @@ pacman.model = {
         this.vetime = vetime;
 
         this.animate = animate;
-        this.color   = color;
-        this.path    = undefined;
+        this.color = color;
+        this.previousPos = undefined;
+        this.path = undefined;
     },
 
-    createNewGame: function () {
+    createNewGame: function() {
         pacman.settings.buildMaze();
         pacman.model.points = 0;
         pacman.model.tickCount = 0;
         pacman.model.pacman = new pacman.model.Actor(8 * 14,
-                8 * 23 + 3,
-                DIR_NONE,
-                0,
-                0,
-                pacman.g.pacmanAnimation,
-                "");
+                                                     8 * 23 + 3,
+                                                     DIR_NONE,
+                                                     0,
+                                                     0,
+                                                     pacman.g.pacmanAnimation,
+                                                     "");
         pacman.model.ghosts = [
             new pacman.model.Actor(8 * 15 + 7, 8 * 14 + 7, DIR_NONE, 360, -1, pacman.g.drawGhost, "orange"),
             new pacman.model.Actor(8 * 13 + 7, 8 * 14 + 7, DIR_NONE, 240, -1, pacman.g.drawGhost, "pink"),
             new pacman.model.Actor(8 * 11 + 7, 8 * 14 + 7, DIR_NONE, 120, -1, pacman.g.drawGhost, "cyan"),
-            new pacman.model.Actor(8 * 13 + 7, 8 * 11 + 3, DIR_NONE, 0,   -1, pacman.g.drawGhost, "red")
+            new pacman.model.Actor(8 * 13 + 7, 8 * 11 + 3, DIR_NONE, 0, -1, pacman.g.drawGhost, "red")
         ];
         pacman.model.renderPoints("N/A");
     },
 
-    renderPoints: function (p) {
+    renderPoints: function(p) {
         document.getElementById("point-counter").innerHTML = "SCORE: " + p;
     },
 
-    addEntry: function () {
+    addEntry: function() {
         pacman.model.top10list.push({username: pacman.model.username,
-            score: pacman.model.points,
-            ticks: pacman.model.tickCount});
+                        score: pacman.model.points,
+                        ticks: pacman.model.tickCount});
 
-        pacman.model.top10list.sort(function (a, b) {
+        pacman.model.top10list.sort(function(a,b) {
             if (!a.username) {
                 if (!b.username) {
                     return 0;
@@ -553,7 +680,7 @@ pacman.model = {
     ]
 };
 
-pacman.model.Actor.prototype.getTilePosition = function () {
+pacman.model.Actor.prototype.getTilePosition = function() {
     if (this.x === 8 * (pacman.settings.w - 1) + 7) {
         // special case.
         return [pacman.settings.w - 1, parseInt(this.y / 8)];
@@ -566,11 +693,11 @@ pacman.model.Actor.prototype.getTilePosition = function () {
     }
 }
 
-pacman.model.Grid.prototype.getTile = function (x, y) {
+pacman.model.Grid.prototype.getTile = function(x, y) {
     return this.g[x][y];
 }
 
-pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function () {
+pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function() {
     var n = [];
     var x = this.x;
     var y = this.y;
@@ -608,18 +735,18 @@ pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function () {
         n.push(grid.getTile(x + 1, y + 1));
     }
 
-    if (y === 14 && x === 0) {
+    if (y == 14 && x == 0) {
         n.push(grid.getTile(pacman.settings.w - 1, y));
     }
 
-    if (y === 14 && x === pacman.settings.w - 1) {
+    if (y == 14 && x == pacman.settings.w - 1) {
         n.push(grid.getTile(0, y));
     }
 
     return n;
-};
+}
 
-pacman.model.Tile.prototype.getNonObstacleNeighbors = function () {
+pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
     var neighbors = [];
     var x = this.x;
     var y = this.y;
@@ -650,7 +777,7 @@ pacman.model.Tile.prototype.getNonObstacleNeighbors = function () {
     }
 
     return neighbors;
-};
+}
 
 function sort(s, c) {
     for (var i = 1; i < s.length; i++) {
@@ -663,13 +790,13 @@ function sort(s, c) {
 }
 
 var tileXComparator = {
-    compare: function (a, b) {
+    compare: function(a, b) {
         return a.x - b.x;
     }
 };
 
 var tileYComparator = {
-    compare: function (a, b) {
+    compare: function(a, b) {
         return a.y - b.y;
     }
 };
@@ -677,14 +804,14 @@ var tileYComparator = {
 pacman.engine = {
     magic: {
         CONTINUE: 0,
-        FAIL: 1,
-        VICTORY: 2
+        FAIL:     1,
+        VICTORY:  2
     },
 
     runs: false,
     pauseStatusChanged: false,
 
-    newGame: function (username) {
+    newGame: function(username) {
         pacman.model.username = username;
         pacman.model.createNewGame();
         pacman.engine.runs = true;
@@ -694,12 +821,12 @@ pacman.engine = {
         pacman.engine.showIntro0();
     },
 
-    hideResultView: function () {
+    hideResultView: function() {
         document.getElementById("result-view").className = "hidden";
         document.getElementById("point-counter").innerHTML = "";
     },
 
-    showResultView: function (msg) {
+    showResultView: function(msg) {
         document.getElementById("result-msg").innerHTML = msg;
         var tableElement = document.getElementById("score-table");
         var html = "<tr> <td><h3>Name</h3></td> <td><h3>Score</h3></td> <td><h3>Time ticks</h3></td> </tr>";
@@ -718,21 +845,21 @@ pacman.engine = {
         document.getElementById("result-view").className = "";
     },
 
-    showIntro0: function () {
+    showIntro0: function() {
         setTimeout(pacman.engine.showIntro1, 1000);
     },
 
-    showIntro1: function () {
+    showIntro1: function() {
         pacman.g.drawReadyMessage();
         pacman.engine.runs = true;
         setTimeout(
-                function () {
-                    pacman.model.renderPoints(pacman.model.points);
-                    pacman.engine.tick();
-                }, 1500);
+            function() {
+                pacman.model.renderPoints(pacman.model.points);
+                pacman.engine.tick();
+            }, 1500);
     },
 
-    input: function () {
+    input: function() {
         var delta = [0, 0];
 
         if (pacman.input.left) {
@@ -754,13 +881,13 @@ pacman.engine = {
         return delta;
     },
 
-    logic: function (delta) {
+    logic: function(delta) {
         if (pacman.model.pacman) {
             var pm = pacman.model.pacman;
             var coords = pm.getTilePosition();
 
-            switch (delta[0]) {
-                case - 1:
+            switch(delta[0]) {
+                case -1:
 
                     if (pm.y % 8 === 3) {
                         if (pm.y === 8 * 14 + 3 && (pm.x > 8 * 18 + 3 || pm.x < 8 * 10)) {
@@ -793,8 +920,8 @@ pacman.engine = {
                     break;
             }
 
-            switch (delta[1]) {
-                case - 1:
+            switch(delta[1]) {
+                case -1:
 
                     if (pm.x % 8 === 3) {
                         tile = pacman.model.grid.getTile(coords[0], coords[1] - 1);
@@ -822,7 +949,7 @@ pacman.engine = {
             }
 
             // move the punkman.
-            switch (pm.dir) {
+            switch(pm.dir) {
                 case DIR_UP:
 
                     if (pm.y % 8 > 3) {
@@ -937,6 +1064,7 @@ pacman.engine = {
                         ghost.path = undefined;
                         var bonus = 200 * Math.pow(2, pacman.model.ghostsEaten++);
                         pacman.model.points += bonus;
+                        console.log(bonus);
                     } else {
                         // Bye bye!
                         return pacman.engine.magic.FAIL;
@@ -967,7 +1095,7 @@ pacman.engine = {
                     for (var i = 0; i < pacman.model.ghosts.length; i++) {
                         // vulnerability ends after 900 ticks at almost 60 Hz -> 15+ seconds.
                         pacman.model.ghosts[i].vetime = pacman.model.tickCount + 900;
-                        pacman.model.ghosts[i].path = undefined; 
+                        pacman.model.ghosts[i].path = undefined;
                     }
                 }
             }
@@ -975,36 +1103,8 @@ pacman.engine = {
 
         return pacman.engine.magic.CONTINUE;
     },
-    
-    computeVulnerableGhostRandomPath: function(ghost) {
-        var ghostTilePos = ghost.getTilePosition();
-        var sourceTile   = pacman.model.grid.getTile(ghostTilePos[0],
-                                                     ghostTilePos[1]);
-        var u = undefined;
-        const path = [];
-        const reachableMap = pacman.computeReachableTiles(sourceTile, 
-                                                          ghost);
-        const tiles = Object.values(reachableMap);
-        
-        if (tiles.length === 0 || (tiles.length === 1 && tiles[0] === null)) {
-            return [];
-        }
-        
-        do {
-            const index = parseInt(Math.random() * tiles.length);
-            u = tiles[index];
-        } while (u === sourceTile || u === undefined || u === null);
 
-        while (u) {
-            path.push(u);
-            const key = pacman.tileToCoorinatesString(u);
-            u = reachableMap[key];
-        }
-        
-        return path.reverse();
-    },
-
-    moveGhost: function (g) {
+    moveGhost: function(g) {
         if (g.vetime > pacman.model.tickCount) {
             // g is vulnerable.
 
@@ -1018,46 +1118,31 @@ pacman.engine = {
             }
 
             if (!g.path || g.path.length < 2) {
-                g.path = pacman.engine.computeVulnerableGhostRandomPath(g);
-                
-                if (g.path.length < 2) {
-                    console.log("g.path.length: ", g.path.length, " < 2");
-                    return;
+                var ghostPos = g.getTilePosition();
+                var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
+                var reachable = undefined;
+                var u = undefined;
+                var path = undefined;
+
+                reachable = pacman.BFS(sourceTile);
+
+                do {
+                    u = reachable[parseInt(Math.random() * reachable.length)];
+                } while (u === sourceTile);
+
+                path = [];
+
+                while (u) {
+                    path.unshift(u);
+                    u = u.parent;
                 }
-                
-                
-//                var ghostPos = g.getTilePosition();
-//                var sourceTile = pacman.model.grid.getTile(ghostPos[0],
-//                                                           ghostPos[1]);
-//                var u = undefined;
-//                var path = undefined;
-//
-//                const reachableMap = pacman.computeReachableTiles(sourceTile, g);
-//                const tiles = Object.values(reachableMap);
-//
-//                if (tiles.length === 0) {
-//                    return;
-//                }
-//                
-//                do {
-//                    u = tiles[parseInt(Math.random() * tiles.length)];
-//                } while (u === sourceTile || u === undefined || u === null);
-//
-//                path = [];
-//
-//                while (u) {
-//                    path.push(u);
-//                    const key = pacman.tileToCoorinatesString(u);
-//                    u = reachableMap[key];
-//                }
-//
-//                g.path = path;
+
+                g.path = path;
             }
 
             var nextTile = g.path[1];
             var ghostPos = g.getTilePosition();
-            var ghostDir = [Math.sign(nextTile.x - ghostPos[0]),
-                            Math.sign(nextTile.y - ghostPos[1])];
+            var ghostDir = [nextTile.x - ghostPos[0], nextTile.y - ghostPos[1]];
 
             if (ghostDir[0] === -1) {
                 if (g.y % 8 < 3) {
@@ -1167,10 +1252,10 @@ pacman.engine = {
         var ghostPos = g.getTilePosition();
 
         if (!g.path || pacmanPos[0] !== pm.previousPos[0]
-                || pacmanPos[1] !== pm.previousPos[1]) {
+                    || pacmanPos[1] !== pm.previousPos[1]) {
             var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
             var targetTile = pacman.model.grid.getTile(pacmanPos[0], pacmanPos[1]);
-            var path = pacman.breadthFirstSearch(sourceTile, targetTile, g);
+            var path = pacman.AStar(sourceTile, targetTile, g);
             g.path = path;
         }
 
@@ -1256,7 +1341,7 @@ pacman.engine = {
     },
 
     // draws shit
-    render: function () {
+    render: function() {
         if (!pacman.engine.runs) {
             if (pacman.engine.pauseStatusChanged) {
                 pacman.engine.pauseStatusChanged = false;
@@ -1272,46 +1357,46 @@ pacman.engine = {
         pacman.g.setFillStyle("#0000ff");
         // left
         pacman.g.drawVertLine(8 * 10 + 4,
-                8 * 12 + 4,
-                8 * 4)
+                              8 * 12 + 4,
+                              8 * 4)
         pacman.g.drawVertLine(8 * 10 + 7,
-                8 * 12 + 7,
-                8 * 3 + 2)
+                              8 * 12 + 7,
+                              8 * 3 + 2)
         // righ
         pacman.g.drawVertLine(8 * 17 + 3,
-                8 * 12 + 4,
-                8 * 4)
+                              8 * 12 + 4,
+                              8 * 4)
         pacman.g.drawVertLine(8 * 17,
-                8 * 12 + 7,
-                8 * 3 + 2);
+                              8 * 12 + 7,
+                              8 * 3 + 2);
         // top left
         pacman.g.drawHorzLine(8 * 10 + 5,
-                8 * 12 + 4,
-                8 * 2 + 3);
+                              8 * 12 + 4,
+                              8 * 2 + 3);
         pacman.g.drawHorzLine(8 * 11,
-                8 * 12 + 7,
-                8 * 2);
+                              8 * 12 + 7,
+                              8 * 2);
         pacman.g.drawVertLine(8 * 12 + 7,
-                8 * 12 + 5,
-                2);
+                              8 * 12 + 5,
+                              2);
         // top right
         pacman.g.drawHorzLine(8 * 15,
-                8 * 12 + 4,
-                8 * 2 + 4);
+                              8 * 12 + 4,
+                              8 * 2 + 4);
         pacman.g.drawHorzLine(8 * 15,
-                8 * 12 + 7,
-                8 * 2 + 1);
+                              8 * 12 + 7,
+                              8 * 2 + 1);
         pacman.g.drawVertLine(8 * 15,
-                8 * 12 + 5,
-                2);
+                              8 * 12 + 5,
+                              2);
 
         // bottom
         pacman.g.drawHorzLine(8 * 11,
-                8 * 16,
-                8 * 6);
+                              8 * 16,
+                              8 * 6);
         pacman.g.drawHorzLine(8 * 10 + 5,
-                8 * 16 + 3,
-                8 * 6 + 6);
+                              8 * 16 + 3,
+                              8 * 6 + 6);
 
         // the pen bar
         pacman.g.setFillStyle("#ffaaaa");
@@ -1333,23 +1418,23 @@ pacman.engine = {
                     if (tile.hasBerry) {
                         pacman.g.setFillStyle("#ffffff");
                         pacman.g.fillRect(8 * tile.x + 3,
-                                8 * tile.y + 3,
-                                2,
-                                2);
+                                          8 * tile.y + 3,
+                                          2,
+                                          2);
                     } else if (tile.hasEnergizer && pacman.model.showEnergizers) {
                         pacman.g.setFillStyle("#ffffff");
                         pacman.g.fillRect(8 * tile.x + 2,
-                                8 * tile.y + 3,
-                                4,
-                                2);
+                                          8 * tile.y + 3,
+                                          4,
+                                          2);
                         pacman.g.fillRect(8 * tile.x + 3,
-                                8 * tile.y + 2,
-                                2,
-                                1);
+                                          8 * tile.y + 2,
+                                          2,
+                                          1);
                         pacman.g.fillRect(8 * tile.x + 3,
-                                8 * tile.y + 5,
-                                2,
-                                1);
+                                          8 * tile.y + 5,
+                                          2,
+                                          1);
                     }
 
                     continue;
@@ -1386,41 +1471,41 @@ pacman.engine = {
                         // gonna draw the opposite corners.
                         if (nw) {
                             pacman.g.drawVertLine(8 * tile.x + 3,
-                                    8 * tile.y,
-                                    2);
+                                                  8 * tile.y,
+                                                  2);
                             pacman.g.drawHorzLine(8 * tile.x,
-                                    8 * tile.y + 3,
-                                    2);
+                                                  8 * tile.y + 3,
+                                                  2);
                             pacman.g.drawVPixel(8 * tile.x + 2,
-                                    8 * tile.y + 2);
+                                                8 * tile.y + 2);
                         } else if (ne) {
                             pacman.g.drawVertLine(8 * tile.x + 4,
-                                    8 * tile.y,
-                                    2);
+                                                  8 * tile.y,
+                                                  2);
                             pacman.g.drawHorzLine(8 * tile.x + 6,
-                                    8 * tile.y + 3,
-                                    2);
+                                                  8 * tile.y + 3,
+                                                  2);
                             pacman.g.drawVPixel(8 * tile.x + 5,
-                                    8 * tile.y + 2);
+                                                8 * tile.y + 2);
                         } else if (sw) {
                             pacman.g.drawVertLine(8 * tile.x + 3,
-                                    8 * tile.y + 6,
-                                    2);
+                                                  8 * tile.y + 6,
+                                                  2);
                             pacman.g.drawHorzLine(8 * tile.x,
-                                    8 * tile.y + 4,
-                                    2);
+                                                  8 * tile.y + 4,
+                                                  2);
                             pacman.g.drawVPixel(8 * tile.x + 2,
-                                    8 * tile.y + 5);
+                                                8 * tile.y + 5);
                         } else {
                             // se === true right here.
                             pacman.g.drawVertLine(8 * tile.x + 4,
-                                    8 * tile.y + 6,
-                                    2);
+                                                  8 * tile.y + 6,
+                                                  2);
                             pacman.g.drawHorzLine(8 * tile.x + 6,
-                                    8 * tile.y + 4,
-                                    2);
+                                                  8 * tile.y + 4,
+                                                  2);
                             pacman.g.drawVPixel(8 * tile.x + 5,
-                                    8 * tile.y + 5);
+                                                8 * tile.y + 5);
                         }
 
                         break;
@@ -1434,13 +1519,13 @@ pacman.engine = {
                             if (n[0].x === tile.x - 1) {
                                 // left.
                                 pacman.g.drawVertLine(8 * tile.x + 4,
-                                        8 * tile.y,
-                                        8);
+                                                      8 * tile.y,
+                                                      8);
                             } else {
                                 // right.
                                 pacman.g.drawVertLine(8 * tile.x + 3,
-                                        8 * tile.y,
-                                        8);
+                                                      8 * tile.y,
+                                                      8);
                             }
                         } else {
                             // horizontal.
@@ -1449,13 +1534,13 @@ pacman.engine = {
                             if (n[0].y === tile.y - 1) {
                                 // top.
                                 pacman.g.drawHorzLine(8 * tile.x,
-                                        8 * tile.y + 4,
-                                        8);
+                                                      8 * tile.y + 4,
+                                                      8);
                             } else {
                                 // bottom.
                                 pacman.g.drawHorzLine(8 * tile.x,
-                                        8 * tile.y + 3,
-                                        8);
+                                                      8 * tile.y + 3,
+                                                      8);
                             }
                         }
 
@@ -1469,45 +1554,45 @@ pacman.engine = {
                             if (o.y === tile.y + 1) {
                                 // opens to south-east.
                                 pacman.g.drawVertLine(8 * tile.x + 3,
-                                        8 * tile.y + 5,
-                                        3);
+                                                      8 * tile.y + 5,
+                                                      3);
                                 pacman.g.drawHorzLine(8 * tile.x + 5,
-                                        8 * tile.y + 3,
-                                        3);
+                                                      8 * tile.y + 3,
+                                                      3);
                                 pacman.g.drawVPixel(8 * tile.x + 4,
-                                        8 * tile.y + 4);
+                                                    8 * tile.y + 4);
                             } else {
                                 // opens to north-east.
                                 pacman.g.drawVertLine(8 * tile.x + 3,
-                                        8 * tile.y,
-                                        3);
+                                                      8 * tile.y,
+                                                      3);
                                 pacman.g.drawHorzLine(8 * tile.x + 5,
-                                        8 * tile.y + 4,
-                                        3);
+                                                      8 * tile.y + 4,
+                                                      3);
                                 pacman.g.drawVPixel(8 * tile.x + 4,
-                                        8 * tile.y + 3);
+                                                    8 * tile.y + 3);
                             }
                         } else {
                             if (o.y === tile.y + 1) {
                                 // opens to south-west.
                                 pacman.g.drawVertLine(8 * tile.x + 4,
-                                        8 * tile.y + 5,
-                                        3);
+                                                      8 * tile.y + 5,
+                                                      3);
                                 pacman.g.drawHorzLine(8 * tile.x,
-                                        8 * tile.y + 3,
-                                        3);
+                                                      8 * tile.y + 3,
+                                                      3);
                                 pacman.g.drawVPixel(8 * tile.x + 3,
-                                        8 * tile.y + 4);
+                                                    8 * tile.y + 4);
                             } else {
                                 // opens to north-west.
                                 pacman.g.drawVertLine(8 * tile.x + 4,
-                                        8 * tile.y,
-                                        3);
+                                                      8 * tile.y,
+                                                      3);
                                 pacman.g.drawHorzLine(8 * tile.x,
-                                        8 * tile.y + 4,
-                                        3);
+                                                      8 * tile.y + 4,
+                                                      3);
                                 pacman.g.drawVPixel(8 * tile.x + 3,
-                                        8 * tile.y + 3);
+                                                    8 * tile.y + 3);
                             }
                         }
 
@@ -1603,7 +1688,7 @@ pacman.engine = {
 
     },
 
-    tick: function () {
+    tick: function() {
         var status = pacman.engine.magic.CONTINUE;
 
         if (pacman.engine.runs === true) {
@@ -1630,17 +1715,17 @@ pacman.engine = {
     }
 };
 
-var KEY_UP = 38;
-var KEY_RIGHT = 39;
-var KEY_DOWN = 40;
-var KEY_LEFT = 37;
+var KEY_UP      = 38;
+var KEY_RIGHT   = 39;
+var KEY_DOWN    = 40;
+var KEY_LEFT    = 37;
 
 var KEY_A = 65;
 var KEY_S = 83;
 var KEY_D = 68;
 var KEY_W = 87;
 
-var KEY_SPACE = 32;
+var KEY_SPACE   = 32;
 
 function detachKeyListener() {
     document.onkeydown = undefined;
@@ -1648,7 +1733,7 @@ function detachKeyListener() {
 }
 
 function attachKeyListener() {
-    document.onkeydown = function (eventInfo) {
+    document.onkeydown = function(eventInfo) {
         var code = eventInfo.keyCode;
 
         if (code === KEY_UP) {
@@ -1670,7 +1755,7 @@ function attachKeyListener() {
             pacman.input.right = true;
             eventInfo.preventDefault();
         } else if (code === KEY_S) {
-            pacman.input.down = true;
+            pacman.input.down  = true;
             eventInfo.preventDefault();
         } else if (code === KEY_A) {
             pacman.input.left = true;
@@ -1682,7 +1767,7 @@ function attachKeyListener() {
         }
     };
 
-    document.onkeyup = function (eventInfo) {
+    document.onkeyup = function(eventInfo) {
         var code = eventInfo.keyCode;
 
         if (code === KEY_UP) {
