@@ -4,17 +4,34 @@
         <meta charset="utf-8">
         <title>PacMan.js!</title>
         <style media="screen">
-            .hidden {display: none;}
-            .text {color: white; font-family: "Times New Roman";}
-            .smallText {color: white; font-family: "Times New Roman"; font-size: 12px;}
-            .largeText {color: white; font-family: "Times New Roman"; font-size: 24px;}
-            .red {color: red;}
-            .yellow {color: yellow;}
-            #point-counter {margin: 35px;}
-            .container {width: 900px; margin-left: auto; margin-right: auto;}
-            .item {float: left; margin: 0 20px; text-align: center;}
-            body {background: black;}
-            canvas {background: black; margin: 0;}
+            .text {
+                color: white;
+                font-family: "Times New Roman";
+            }
+            #point-counter {
+                margin: 35px;
+            }
+            .container {
+                width: 900px;
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .item {
+                margin: 0 20px;
+                text-align: center;
+            }
+            body {
+                background: black;
+                margin: 0;
+                height: 100vh;
+                display: flex;
+                justify-content: center; /* horizontal centering */
+                align-items: center;     /* vertical centering */
+            }
+            canvas {
+                background: black;
+                margin: 0;
+            }
         </style>
     </head>
     <body>
@@ -25,7 +42,7 @@
                 <div id="point-counter" class="text"></div>
             </div>
         </div>
-        
+
         <script src="queue.js"></script>
         <script src="heap.js"></script> 
         <script src="pacman.js"></script>
