@@ -48,12 +48,12 @@ pacman.AStar = function(start, goal, ghost) {
     DISTANCE_MAP[start.id] = 0;
     PARENT_MAP  [start.id] = null;
 
-    var l = [start];
-    pacman.prune(l, pacman.model.ghosts, ghost);
-
-    if (l.length === 0) {
-        return l;
-    }
+//    var l = [start];
+//    pacman.prune(l, pacman.model.ghosts, ghost);
+//
+//    if (l.length === 0) {
+//        return l;
+//    }
 
     OPEN.add(start, pacman.heuristicFunction(start, goal));
 
@@ -72,11 +72,9 @@ pacman.AStar = function(start, goal, ghost) {
             return path.reverse();
         }
 
-        var children = u.getNonObstacleNeighbors();
-        // honour other ghosts.
-        pacman.prune(children,
-                     pacman.model.ghosts,
-                     ghost);
+        var children = u.getNonObstacleNeighbors(ghost,
+                                                 pacman.model.ghosts,
+                                                 false);
 
         for (const child of children) {
             if (CLOSED[child.id]) {
@@ -117,7 +115,9 @@ pacman.BFS = function(start) {
 
     while (Q.getSize() > 0) {
         var current = Q.dequeue();
-        var children = current.getNonObstacleNeighbors();
+        var children = current.getNonObstacleNeighbors(null,
+                                                       null, 
+                                                       true);
 
         for (const child of children) {
             if (!visited.has(child.id)) {
@@ -587,18 +587,48 @@ pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function() {
         n.push(grid.getTile(x + 1, y + 1));
     }
 
-    if (y == 14 && x == 0) {
+    if (y === 14 && x === 0) {
         n.push(grid.getTile(pacman.settings.w - 1, y));
     }
 
-    if (y == 14 && x == pacman.settings.w - 1) {
+    if (y === 14 && x === pacman.settings.w - 1) {
         n.push(grid.getTile(0, y));
     }
 
     return n;
 };
 
-pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
+function getBlockedTile(ghost, allGhosts) {
+    for (const g of allGhosts) {
+        if (g !== ghost && ghost.x === g.x && ghost.y === g.y) {
+            return pacman.model.Grid.getTile(ghost.x / pacman.model.Grid.w,
+                                             ghost.y / pacman.model.Grid.h);
+        }
+    }
+    
+    return null;
+}
+
+pacman.model.pruneGhostBlockedNeighbors = function(neighbors,
+                                                   ghost,
+                                                   allGhosts) {
+    const prunedNeighbors = [];
+    
+    for (const n of neighbors) {
+        const blockedTile = getBlockedTile(ghost, 
+                                           allGhosts);
+        
+        if (!blockedTile) {
+            prunedNeighbors.push(n);
+        }
+    }
+    
+    return prunedNeighbors;
+};
+
+pacman.model.Tile.prototype.getNonObstacleNeighbors = function(ghost, 
+                                                               allGhosts,
+                                                               noObstacles) {
     var neighbors = [];
     var x = this.x;
     var y = this.y;
@@ -627,7 +657,13 @@ pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
     if (y === 14 && x === pacman.settings.w - 1) {
         neighbors.push(grid.getTile(0, y));
     }
-
+    
+    if (!noObstacles) {
+        pacman.model.pruneGhostBlockedNeighbors(neighbors,
+                                                ghost,
+                                                allGhosts);
+    }
+    
     return neighbors;
 };
 
@@ -890,7 +926,6 @@ pacman.engine = {
                         ghost.path = undefined;
                         var bonus = 200 * Math.pow(2, pacman.model.ghostsEaten++);
                         pacman.model.points += bonus;
-                        console.log(bonus);
                     } else {
                         // Bye bye!
                         return pacman.engine.magic.FAIL;
@@ -944,6 +979,7 @@ pacman.engine = {
             }
 
             if (!g.path || g.path.length < 2) {
+                
                 var ghostPos = g.getTilePosition();
                 // The source tile of the ghost 'g':
                 var sourceTile = pacman.model.grid.getTile(ghostPos[0],
@@ -965,6 +1001,7 @@ pacman.engine = {
                             parseInt(Math.random() * visitedMapKeys.length);
                     
                     const key = visitedMapKeys[index];
+                    
                     u = visitedMap.get(key);
                 } while (u === sourceTile || !u);
 
@@ -1088,26 +1125,30 @@ pacman.engine = {
         var pacmanPos = pm.getTilePosition();
         var ghostPos = g.getTilePosition();
 
-        if (!g.path) {
-            var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
-            var targetTile = pacman.model.grid.getTile(pacmanPos[0], pacmanPos[1]);
+        if (!g.path || g.path.length < 2) {
+          
+            var sourceTile = pacman.model.grid.getTile(ghostPos[0], 
+                                                       ghostPos[1]);
+                                                       
+            var targetTile = pacman.model.grid.getTile(pacmanPos[0], 
+                                                       pacmanPos[1]);
+                                                       
+            pm.previousPos[0] = pacmanPos[0];
+            pm.previousPos[1] = pacmanPos[1];
+            
             var path = pacman.AStar(sourceTile,
                                     targetTile, 
                                     g);
             g.path = path;
         }
 
-        if (g.path.length === 1) {
-            // reached the pacman.
-            return;
-        } else if (g.path.length === 0) {
-            console.log("g.path.length == 0");
-            // pacman unreachable.
+        if (g.path.length < 2) {
             return;
         }
 
         var nextTile = g.path[1];
-        var ghostDir = [nextTile.x - ghostPos[0], nextTile.y - ghostPos[1]];
+        var ghostDir = [nextTile.x - ghostPos[0],
+                        nextTile.y - ghostPos[1]];
 
         if (ghostDir[0] === -1) {
             if (g.y % 8 < 3) {
@@ -1171,10 +1212,10 @@ pacman.engine = {
 
         var ghostPos2 = g.getTilePosition();
 
-        if (ghostPos[0] !== ghostPos2[0] || ghostPos[1] !== ghostPos2[1]) {
+        if (ghostPos[0] !== ghostPos2[0] || 
+            ghostPos[1] !== ghostPos2[1]) {
             // once here, ghost g changed the tile.
             g.path.shift();
-            // recompute the shortest feasible path next time.
         }
     },
 
@@ -1537,11 +1578,7 @@ pacman.engine = {
 
         if (status === pacman.engine.magic.CONTINUE) {
             setTimeout(pacman.engine.tick, 1000 / 60);
-        } else if (status === pacman.engine.magic.FAIL) {
-            pacman.engine.showResultView("Defeat! Your score is " + pacman.model.points + " points.");
-        } else if (status === pacman.engine.magic.VICTORY) {
-            pacman.engine.showResultView("Victory! Your score is " + pacman.model.points + " points.");
-        }
+        } 
 
         if (pacman.engine.runs === true) {
             if (++pacman.model.tickCount % 60 === 0) {
