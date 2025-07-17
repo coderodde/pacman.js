@@ -83,6 +83,14 @@
                 
                 assert(4500, h.extractMinimum());
                 
+                for (let i = 50; i < 4500; ++i) {
+                    assert(i, h.extractMinimum());
+                }
+                
+                for (let i = 4501; i < 5000; ++i) {
+                    assert(i, h.extractMinimum());
+                }
+                
                 console.log("Deep decrease priority test passed!");
             })();
         </script>

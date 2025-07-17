@@ -40,7 +40,7 @@ pacman.prune = function(tileList, ghostList, ghostSelf) {
 };
 
 pacman.AStar = function(start, goal, ghost) {
-    const OPEN = new pacman.ds.Heap(pacman.tileEq);
+    const OPEN = new ds.Heap((i) => i.id);
     const CLOSED = {};
     const DISTANCE_MAP = {};
     const PARENT_MAP = {};
@@ -99,8 +99,8 @@ pacman.AStar = function(start, goal, ghost) {
                 
                 const h = pacman.heuristicFunction(child,
                                                    goal);
-                OPEN.changePriority(child, 
-                                    cost + h);
+                OPEN.decreasePriority(child, 
+                                      cost + h);
             }
         }
     }
