@@ -959,25 +959,37 @@ pacman.engine = {
                 
                 if (visitedMapValues.length === 0 ||
                    (visitedMapValues.length === 1 && !visitedMapValues[0])) {
+                    console.log("962");
                     return;
                 }
 
-                do {
-                    const index = 
-                            parseInt(Math.random() * visitedMapKeys.length);
-                    
-                    const key = visitedMapKeys[index];
-                    
-                    u = visitedMap.get(key);
-                } while (u === sourceTile || !u);
+                findPathLoop:
+                while (true) {
+                    // Find a nice end tile:
+                    do {
+                        const index = 
+                                parseInt(Math.random() * visitedMapKeys.length);
 
-                while (u) {
-                    path.push(u);
-                    const uid = u.id;
-                    u = visitedMap.get(uid);
+                        const key = visitedMapKeys[index];
+
+                        u = visitedMap.get(key);
+                    } while (u === sourceTile || !u);
+
+                    // Construct the shortest path:
+                    while (u) {
+                        path.push(u);
+                        const uid = u.id;
+                        u = visitedMap.get(uid);
+                    }
+
+                    g.path = path.reverse();
+                    
+                    if (g.path.length > 1) {
+                        console.log("hui");
+                        // Once here, we have a path that warrants a move:
+                        break findPathLoop;
+                    }
                 }
-
-                g.path = path.reverse();
             }
 
             var nextTile = g.path[1];
