@@ -10,7 +10,9 @@ pacman.tileEq = function(tile1, tile2) {
     return tile1.x === tile2.x && tile1.y === tile2.y;
 };
 
-pacman.prune = function(tileList, ghostList, ghostSelf) {
+pacman.prune = function(tileList, 
+                        ghostList,
+                        ghostSelf) {
     var index = -1;
 
     for (var k = 0; k < ghostList.length; k++) {
@@ -18,10 +20,6 @@ pacman.prune = function(tileList, ghostList, ghostSelf) {
             index = k;
             break;
         }
-    }
-
-    if (index === -1) {
-        return;
     }
 
     outer:
@@ -48,12 +46,12 @@ pacman.AStar = function(start, goal, ghost) {
     DISTANCE_MAP[start.id] = 0;
     PARENT_MAP  [start.id] = null;
 
-//    var l = [start];
-//    pacman.prune(l, pacman.model.ghosts, ghost);
-//
-//    if (l.length === 0) {
-//        return l;
-//    }
+    var l = [start];
+    pacman.prune(l, pacman.model.ghosts, ghost);
+
+    if (l.length === 0) {
+        return [];
+    }
 
     OPEN.add(start, pacman.heuristicFunction(start, goal));
 
@@ -75,7 +73,11 @@ pacman.AStar = function(start, goal, ghost) {
         var children = u.getNonObstacleNeighbors(ghost,
                                                  pacman.model.ghosts,
                                                  false);
-
+                                                 
+        pacman.prune(children,
+                     pacman.model.ghosts,
+                     ghost);
+                     
         for (const child of children) {
             if (CLOSED[child.id]) {
                 continue;
@@ -496,10 +498,10 @@ pacman.model = {
                                                      pacman.g.pacmanAnimation,
                                                      "");
         pacman.model.ghosts = [
-            new pacman.model.Actor(8 * 15 + 7, 8 * 14 + 7, DIR_NONE, 360, -1, pacman.g.drawGhost, "orange"),
-            new pacman.model.Actor(8 * 13 + 7, 8 * 14 + 7, DIR_NONE, 240, -1, pacman.g.drawGhost, "pink"),
+            new pacman.model.Actor(8 * 13 + 7, 8 * 11 + 3, DIR_NONE, 0,   -1, pacman.g.drawGhost, "red"),
             new pacman.model.Actor(8 * 11 + 7, 8 * 14 + 7, DIR_NONE, 120, -1, pacman.g.drawGhost, "cyan"),
-            new pacman.model.Actor(8 * 13 + 7, 8 * 11 + 3, DIR_NONE, 0, -1, pacman.g.drawGhost, "red")
+            new pacman.model.Actor(8 * 13 + 7, 8 * 14 + 7, DIR_NONE, 240, -1, pacman.g.drawGhost, "pink"),
+            new pacman.model.Actor(8 * 15 + 7, 8 * 14 + 7, DIR_NONE, 360, -1, pacman.g.drawGhost, "orange")
         ];
         pacman.model.renderPoints("N/A");
     },
@@ -598,37 +600,7 @@ pacman.model.Tile.prototype.getNonObstacleNeighborsExt = function() {
     return n;
 };
 
-function getBlockedTile(ghost, allGhosts) {
-    for (const g of allGhosts) {
-        if (g !== ghost && ghost.x === g.x && ghost.y === g.y) {
-            return pacman.model.Grid.getTile(ghost.x / pacman.model.Grid.w,
-                                             ghost.y / pacman.model.Grid.h);
-        }
-    }
-    
-    return null;
-}
-
-pacman.model.pruneGhostBlockedNeighbors = function(neighbors,
-                                                   ghost,
-                                                   allGhosts) {
-    const prunedNeighbors = [];
-    
-    for (const n of neighbors) {
-        const blockedTile = getBlockedTile(ghost, 
-                                           allGhosts);
-        
-        if (!blockedTile) {
-            prunedNeighbors.push(n);
-        }
-    }
-    
-    return prunedNeighbors;
-};
-
-pacman.model.Tile.prototype.getNonObstacleNeighbors = function(ghost, 
-                                                               allGhosts,
-                                                               noObstacles) {
+pacman.model.Tile.prototype.getNonObstacleNeighbors = function() {
     var neighbors = [];
     var x = this.x;
     var y = this.y;
@@ -656,12 +628,6 @@ pacman.model.Tile.prototype.getNonObstacleNeighbors = function(ghost,
 
     if (y === 14 && x === pacman.settings.w - 1) {
         neighbors.push(grid.getTile(0, y));
-    }
-    
-    if (!noObstacles) {
-        pacman.model.pruneGhostBlockedNeighbors(neighbors,
-                                                ghost,
-                                                allGhosts);
     }
     
     return neighbors;
@@ -1123,9 +1089,11 @@ pacman.engine = {
 
         var pm = pacman.model.pacman;
         var pacmanPos = pm.getTilePosition();
-        var ghostPos = g.getTilePosition();
+        var ghostPos  = g.getTilePosition();
 
-        if (!g.path || g.path.length < 2) {
+        if (!g.path || g.path.length < 2
+                || pacmanPos[0] !== pm.previousPos[0]
+                || pacmanPos[1] !== pm.previousPos[1]) {
           
             var sourceTile = pacman.model.grid.getTile(ghostPos[0], 
                                                        ghostPos[1]);
