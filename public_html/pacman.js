@@ -110,9 +110,9 @@ pacman.AStar = function(start, goal, ghost) {
 
 pacman.BFS = function(start) {
     var Q = new DynamicCircularQueue();
-    const visited = {};
+    const visited = new Map();
     
-    visited[start.id] = start;
+    visited.set(start.id, null);
     Q.enqueue(start);
 
     while (Q.getSize() > 0) {
@@ -120,14 +120,14 @@ pacman.BFS = function(start) {
         var children = current.getNonObstacleNeighbors();
 
         for (const child of children) {
-            if (!visited[child.id]) {
-                 visited[child.id] = current;
-                Q.enqueue(child);
+            if (!visited.has(child.id)) {
+                 visited.set(child.id, current);
+                 Q.enqueue(child);
             }
         }
     }
 
-    return Object.values(visited);
+    return visited;
 };
 
 pacman.settings = {
@@ -663,8 +663,7 @@ pacman.engine = {
     runs: false,
     pauseStatusChanged: false,
 
-    newGame: function(username) {
-        pacman.model.username = username;
+    newGame: function() {
         pacman.model.createNewGame();
         pacman.engine.runs = true;
         pacman.engine.render();
@@ -946,26 +945,33 @@ pacman.engine = {
 
             if (!g.path || g.path.length < 2) {
                 var ghostPos = g.getTilePosition();
-                var sourceTile = pacman.model.grid.getTile(ghostPos[0], ghostPos[1]);
-                var reachable = undefined;
+                // The source tile of the ghost 'g':
+                var sourceTile = pacman.model.grid.getTile(ghostPos[0],
+                                                           ghostPos[1]);
                 var u = undefined;
-                const path = [];
-
-                reachable = pacman.BFS(sourceTile);
                 
-                if (reachable.length === 0 ||
-                   (reachable.length === 1 && !reachable[0])) {
+                const path             = [];
+                const visitedMap       = pacman.BFS(sourceTile);
+                const visitedMapKeys   = Array.from(visitedMap.keys());
+                const visitedMapValues = Array.from(visitedMap.values());
+                
+                if (visitedMapValues.length === 0 ||
+                   (visitedMapValues.length === 1 && !visitedMapValues[0])) {
                     return;
                 }
 
                 do {
-                    u = reachable[parseInt(Math.random() * reachable.length)];
+                    const index = 
+                            parseInt(Math.random() * visitedMapKeys.length);
+                    
+                    const key = visitedMapKeys[index];
+                    u = visitedMap.get(key);
                 } while (u === sourceTile || !u);
 
                 while (u) {
                     path.push(u);
                     const uid = u.id;
-                    u = reachable[uid];
+                    u = visitedMap.get(uid);
                 }
 
                 g.path = path.reverse();
@@ -1629,12 +1635,10 @@ function attachKeyListener() {
 }
 
 function initGame(username) {
-    document.getElementById("welcome").className = "hidden";
-    document.getElementById("pmcanvas").className = "";
     var c = document.getElementById("pmcanvas");
     var ctx = c.getContext("2d");
     pacman.g.setContext(ctx);
-    pacman.engine.newGame(username);
+    pacman.engine.newGame();
     attachKeyListener();
 }
 
@@ -1644,11 +1648,4 @@ function nameBoxListener(e) {
     }
 }
 
-function initWelcomeView() {
-    document.getElementById("welcome").className = "text";
-    document.getElementById("pmcanvas").className = "hidden";
-    var box = document.getElementById("namebox");
-    box.addEventListener("keydown", nameBoxListener, false);
-}
-
-initWelcomeView();
+initGame();
